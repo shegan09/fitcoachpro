@@ -47,15 +47,26 @@ export async function getCoachProfile(uid) {
 // Get all clients for a coach
 export async function getClients(coachId) {
   const { data, error } = await supabase
-    .from("clients")
+    .from("profiles")
     .select("*")
-    .eq("coach_id", coachId)
+    .eq("role", "client")
     .order("created_at", { ascending: false });
   if (error) console.error("getClients error:", error.message);
   return data || [];
 }
 
-// Update client status (approve / reject)
+// Get single client
+export async function getClient(clientId) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", clientId)
+    .single();
+  if (error) console.error("getClient error:", error.message);
+  return data;
+}
+
+// Update client status
 export async function updateClientStatus(clientId, status) {
   const { error } = await supabase
     .from("clients")

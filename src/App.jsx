@@ -7,6 +7,7 @@ import {
 } from "firebase/auth";
 
 import { saveProfile } from "./db";
+import { getClients, updateClientStatus } from "./db";
 
 const COLORS = {
   bg: "#0A0A0B",
@@ -797,19 +798,43 @@ const CoachOverview = () => (
   </div>
 );
 
-const CoachClients = () => {
+const CoachClients = ({ user }) => {
   const [filter, setFilter] = useState("all");
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
 
-  const filtered = filter === "all" ? mockClients : mockClients.filter(c => c.status === filter);
+  // Load real clients from Supabase
+  useEffect(() => {
+    loadClients();
+  }, []);
+
+  const loadClients = async () => {
+    setLoading(true);
+    const data = await getClients(user?.uid);
+    setClients(data);
+    setLoading(false);
+  };
+
+  const handleStatusUpdate = async (clientId, status) => {
+    await updateClientStatus(clientId, status);
+    await loadClients(); // refresh the list
+  };
+
+  const filtered = filter === "all"
+    ? clients
+    : clients.filter(c => c.status === filter);
 
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <h2 style={{ fontSize: 24, fontWeight: 800, color: COLORS.text, margin: 0, letterSpacing: "-0.5px" }}>Clients</h2>
+        <h2 style={{ fontSize: 24, fontWeight: 800, color: COLORS.text, margin: 0, letterSpacing: "-0.5px" }}>
+          Clients {!loading && <span style={{ fontSize: 16, color: COLORS.textMuted }}>({clients.length})</span>}
+        </h2>
         <Button variant="primary" onClick={() => setShowModal(true)}>+ Add Client</Button>
       </div>
 
+      {/* Filter tabs */}
       <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
         {["all", "active", "pending", "expired"].map(f => (
           <button key={f} onClick={() => setFilter(f)} style={{
@@ -822,55 +847,112 @@ const CoachClients = () => {
         ))}
       </div>
 
-      <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ borderBottom: `1px solid ${COLORS.border}` }}>
-              {["Client", "Package", "Goal", "Progress", "Status", "Actions"].map(h => (
-                <th key={h} style={{ padding: "12px 16px", fontSize: 11, fontWeight: 700, color: COLORS.textDim, textAlign: "left", letterSpacing: "0.08em", textTransform: "uppercase" }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((c, i) => (
-              <tr key={c.id} style={{ borderBottom: i < filtered.length - 1 ? `1px solid ${COLORS.border}` : "none" }}>
-                <td style={{ padding: "14px 16px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <Avatar name={c.name} size={34} />
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.text }}>{c.name}</div>
-                      <div style={{ fontSize: 12, color: COLORS.textMuted }}>{c.email}</div>
-                    </div>
-                  </div>
-                </td>
-                <td style={{ padding: "14px 16px", fontSize: 13, color: COLORS.textMuted }}>{c.package}</td>
-                <td style={{ padding: "14px 16px", fontSize: 13, color: COLORS.textMuted }}>{c.goal}</td>
-                <td style={{ padding: "14px 16px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ flex: 1, height: 4, background: COLORS.surface3, borderRadius: 2, minWidth: 60 }}>
-                      <div style={{ width: `${c.progress}%`, height: "100%", background: COLORS.accent, borderRadius: 2 }} />
-                    </div>
-                    <span style={{ fontSize: 12, color: COLORS.textMuted, minWidth: 30 }}>{c.progress}%</span>
-                  </div>
-                </td>
-                <td style={{ padding: "14px 16px" }}><Badge variant={c.status}>{c.status}</Badge></td>
-                <td style={{ padding: "14px 16px" }}>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    {c.status === "pending" && (
-                      <>
-                        <Button variant="success" size="sm">✓</Button>
-                        <Button variant="danger" size="sm">✗</Button>
-                      </>
-                    )}
-                    <Button variant="secondary" size="sm">View</Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {/* Loading state */}
+      {loading && (
+        <div style={{
+          background: COLORS.surface, border: `1px solid ${COLORS.border}`,
+          borderRadius: 14, padding: 48, textAlign: "center"
+        }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+          <div style={{ color: COLORS.textMuted }}>Loading clients...</div>
+        </div>
+      )}
 
+      {/* Empty state */}
+      {!loading && clients.length === 0 && (
+        <div style={{
+          background: COLORS.surface, border: `2px dashed ${COLORS.border}`,
+          borderRadius: 14, padding: 48, textAlign: "center"
+        }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>👥</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: COLORS.text, marginBottom: 8 }}>
+            No clients yet
+          </div>
+          <div style={{ color: COLORS.textMuted, marginBottom: 24 }}>
+            Clients will appear here when they sign up and select your packages
+          </div>
+          <Button variant="primary" onClick={() => setShowModal(true)}>+ Add First Client</Button>
+        </div>
+      )}
+
+      {/* Clients table */}
+      {!loading && filtered.length > 0 && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+                {["Client", "Email", "Role", "Joined", "Status", "Actions"].map(h => (
+                  <th key={h} style={{
+                    padding: "12px 16px", fontSize: 11, fontWeight: 700,
+                    color: COLORS.textDim, textAlign: "left",
+                    letterSpacing: "0.08em", textTransform: "uppercase"
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((c, i) => (
+                <tr key={c.id} style={{
+                  borderBottom: i < filtered.length - 1 ? `1px solid ${COLORS.border}` : "none",
+                  transition: "background 0.15s"
+                }}
+                  onMouseEnter={e => e.currentTarget.style.background = COLORS.surface2}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                >
+                  <td style={{ padding: "14px 16px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <Avatar name={c.name || c.email} size={36} />
+                      <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.text }}>
+                        {c.name || "No name"}
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{ padding: "14px 16px", fontSize: 13, color: COLORS.textMuted }}>
+                    {c.email}
+                  </td>
+                  <td style={{ padding: "14px 16px" }}>
+                    <Badge>{c.role}</Badge>
+                  </td>
+                  <td style={{ padding: "14px 16px", fontSize: 13, color: COLORS.textMuted }}>
+                    {new Date(c.created_at).toLocaleDateString("en-US", {
+                      month: "short", day: "numeric", year: "numeric"
+                    })}
+                  </td>
+                  <td style={{ padding: "14px 16px" }}>
+                    <Badge variant={c.status || "pending"}>
+                      {c.status || "pending"}
+                    </Badge>
+                  </td>
+                  <td style={{ padding: "14px 16px" }}>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {(!c.status || c.status === "pending") && (
+                        <>
+                          <Button
+                            variant="success" size="sm"
+                            onClick={() => handleStatusUpdate(c.id, "active")}
+                          >✓ Approve</Button>
+                          <Button
+                            variant="danger" size="sm"
+                            onClick={() => handleStatusUpdate(c.id, "expired")}
+                          >✗ Reject</Button>
+                        </>
+                      )}
+                      {c.status === "active" && (
+                        <Button
+                          variant="danger" size="sm"
+                          onClick={() => handleStatusUpdate(c.id, "expired")}
+                        >Deactivate</Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Add client modal */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Add New Client">
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <Input label="Full Name" placeholder="Client full name" />
@@ -885,7 +967,8 @@ const CoachClients = () => {
             </select>
           </div>
           <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
-            <Button variant="primary" style={{ flex: 1, justifyContent: "center" }} onClick={() => setShowModal(false)}>Add Client</Button>
+            <Button variant="primary" style={{ flex: 1, justifyContent: "center" }}
+              onClick={() => setShowModal(false)}>Add Client</Button>
             <Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
           </div>
         </div>
@@ -1521,7 +1604,7 @@ const Dashboard = ({ user }) => {
     if (user?.role === "coach") {
       switch (activeTab) {
         case "overview": return <CoachOverview />;
-        case "clients": return <CoachClients />;
+        case "clients": return <CoachClients user={user} />;
         case "workouts": return <CoachWorkouts />;
         case "diets": return <CoachDiets />;
         case "payments": return <CoachPayments />;
