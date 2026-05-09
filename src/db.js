@@ -185,3 +185,84 @@ export async function updatePaymentStatus(id, status) {
     .eq("id", id);
   if (error) console.error("updatePaymentStatus error:", error.message);
 }
+
+// ── FILE UPLOADS ────────────────────────────────────────
+
+// Upload a workout PDF or image
+export async function uploadWorkoutFile(coachId, file) {
+  const fileExt = file.name.split(".").pop();
+  const fileName = `${coachId}/${Date.now()}.${fileExt}`;
+
+  const { data, error } = await supabase.storage
+    .from("workouts")
+    .upload(fileName, file);
+
+  if (error) {
+    console.error("uploadWorkoutFile error:", error.message);
+    return null;
+  }
+
+  // Get public URL
+  const { data: urlData } = supabase.storage
+    .from("workouts")
+    .getPublicUrl(fileName);
+
+  return urlData.publicUrl;
+}
+
+// Upload a diet chart PDF or image
+export async function uploadDietFile(coachId, file) {
+  const fileExt = file.name.split(".").pop();
+  const fileName = `${coachId}/${Date.now()}.${fileExt}`;
+
+  const { data, error } = await supabase.storage
+    .from("diets")
+    .upload(fileName, file);
+
+  if (error) {
+    console.error("uploadDietFile error:", error.message);
+    return null;
+  }
+
+  const { data: urlData } = supabase.storage
+    .from("diets")
+    .getPublicUrl(fileName);
+
+  return urlData.publicUrl;
+}
+
+// Save workout record to database
+export async function saveWorkout(coachId, workout) {
+  const { error } = await supabase
+    .from("workouts")
+    .insert({ coach_id: coachId, ...workout });
+  if (error) console.error("saveWorkout error:", error.message);
+}
+
+// Get all workouts for a coach
+export async function getCoachWorkouts(coachId) {
+  const { data, error } = await supabase
+    .from("workouts")
+    .select("*")
+    .eq("coach_id", coachId)
+    .order("created_at", { ascending: false });
+  if (error) console.error("getCoachWorkouts error:", error.message);
+  return data || [];
+}
+
+// Delete a workout
+export async function deleteWorkoutById(id) {
+  const { error } = await supabase
+    .from("workouts")
+    .delete()
+    .eq("id", id);
+  if (error) console.error("deleteWorkout error:", error.message);
+}
+
+// Save diet record to database
+export async function saveDiet(coachId, diet) {
+  const { error } = await supabase
+    .from("workouts")
+    .insert({ coach_id: coachId, type: "Diet Chart", ...diet });
+  if (error) console.error("saveDiet error:", error.message);
+}

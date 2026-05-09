@@ -9,6 +9,8 @@ import {
 
 import { saveProfile } from "./db";
 import { getClients, updateClientStatus } from "./db";
+import { uploadWorkoutFile, saveWorkout, getCoachWorkouts, deleteWorkoutById, uploadDietFile, saveDiet } from "./db";
+
 
 const COLORS = {
   bg: "#0A0A0B",
@@ -987,69 +989,186 @@ const CoachClients = ({ user }) => {
   );
 };
 
-const CoachWorkouts = () => {
+const CoachWorkouts = ({ user }) => {
   const [showModal, setShowModal] = useState(false);
-  const [uploadType, setUploadType] = useState("Workout Plan");
+  const [workouts, setWorkouts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [planName, setPlanName] = useState("");
+  const [assignTo, setAssignTo] = useState("All Clients");
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef(null);
+
+  useEffect(() => { loadWorkouts(); }, []);
+
+  const loadWorkouts = async () => {
+    setLoading(true);
+    const data = await getCoachWorkouts(user?.uid);
+    setWorkouts(data.filter(w => w.type === "Workout Plan"));
+    setLoading(false);
+  };
+
+  const handleFileSelect = (file) => {
+    if (file) setSelectedFile(file);
+  };
+
+  const handleUpload = async () => {
+    if (!planName) { alert("Please enter a plan name"); return; }
+    if (!selectedFile) { alert("Please select a file"); return; }
+
+    setUploading(true);
+    const fileUrl = await uploadWorkoutFile(user?.uid, selectedFile);
+
+    if (fileUrl) {
+      await saveWorkout(user?.uid, {
+        name: planName,
+        type: "Workout Plan",
+        file_url: fileUrl,
+        assigned_to: assignTo,
+        format: selectedFile.name.split(".").pop().toUpperCase()
+      });
+      await loadWorkouts();
+      setShowModal(false);
+      setPlanName("");
+      setSelectedFile(null);
+      setAssignTo("All Clients");
+    } else {
+      alert("Upload failed. Please try again.");
+    }
+    setUploading(false);
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm("Delete this workout plan?")) {
+      await deleteWorkoutById(id);
+      await loadWorkouts();
+    }
+  };
 
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <h2 style={{ fontSize: 24, fontWeight: 800, color: COLORS.text, margin: 0, letterSpacing: "-0.5px" }}>Workout Plans</h2>
+        <h2 style={{ fontSize: 24, fontWeight: 800, color: COLORS.text, margin: 0, letterSpacing: "-0.5px" }}>
+          Workout Plans {!loading && <span style={{ fontSize: 16, color: COLORS.textMuted }}>({workouts.length})</span>}
+        </h2>
         <Button variant="primary" onClick={() => setShowModal(true)}>+ Upload Plan</Button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
-        {mockWorkouts.filter(w => w.type === "Workout Plan").map(w => (
-          <div key={w.id} style={{
-            background: COLORS.surface, border: `1px solid ${COLORS.border}`,
-            borderRadius: 14, padding: 20
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-              <div style={{
-                width: 44, height: 44, borderRadius: 10, background: COLORS.accentBg,
-                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22
-              }}>📋</div>
-              <Badge variant={w.format.toLowerCase()}>{w.format}</Badge>
-            </div>
-            <h4 style={{ fontSize: 15, fontWeight: 700, color: COLORS.text, margin: "0 0 6px" }}>{w.name}</h4>
-            <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 16 }}>Assigned to: {w.assignedTo}</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Button variant="secondary" size="sm">View</Button>
-              <Button variant="ghost" size="sm">Edit</Button>
-              <Button variant="danger" size="sm">Delete</Button>
-            </div>
-          </div>
-        ))}
-      </div>
+      {/* Loading */}
+      {loading && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 48, textAlign: "center" }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+          <div style={{ color: COLORS.textMuted }}>Loading workout plans...</div>
+        </div>
+      )}
 
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Upload Workout Plan">
+      {/* Empty state */}
+      {!loading && workouts.length === 0 && (
+        <div style={{ background: COLORS.surface, border: `2px dashed ${COLORS.border}`, borderRadius: 14, padding: 48, textAlign: "center" }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🏋️</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: COLORS.text, marginBottom: 8 }}>No workout plans yet</div>
+          <div style={{ color: COLORS.textMuted, marginBottom: 24 }}>Upload your first workout plan for your clients</div>
+          <Button variant="primary" onClick={() => setShowModal(true)}>+ Upload First Plan</Button>
+        </div>
+      )}
+
+      {/* Workout cards */}
+      {!loading && workouts.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+          {workouts.map(w => (
+            <div key={w.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                <div style={{ width: 44, height: 44, borderRadius: 10, background: COLORS.accentBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>
+                  📋
+                </div>
+                <Badge variant="pdf">{w.format || "FILE"}</Badge>
+              </div>
+              <h4 style={{ fontSize: 15, fontWeight: 700, color: COLORS.text, margin: "0 0 6px" }}>{w.name}</h4>
+              <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 4 }}>
+                Assigned to: {w.assigned_to}
+              </div>
+              <div style={{ fontSize: 12, color: COLORS.textDim, marginBottom: 16 }}>
+                {new Date(w.created_at).toLocaleDateString()}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <a href={w.file_url} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+                  <Button variant="primary" size="sm">View</Button>
+                </a>
+                <Button variant="danger" size="sm" onClick={() => handleDelete(w.id)}>Delete</Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Upload Modal */}
+      <Modal isOpen={showModal} onClose={() => { setShowModal(false); setSelectedFile(null); setPlanName(""); }} title="Upload Workout Plan">
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <Input label="Plan Name" placeholder="e.g., Push Day A - Upper Body" />
+          <Input label="Plan Name" placeholder="e.g., Push Day A - Upper Body"
+            value={planName} onChange={e => setPlanName(e.target.value)} />
+
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label style={{ fontSize: 13, fontWeight: 600, color: COLORS.textMuted }}>Assign To</label>
-            <select style={{
-              background: COLORS.surface2, border: `1px solid ${COLORS.border}`,
-              borderRadius: 8, padding: "10px 14px", color: COLORS.text, fontSize: 14
-            }}>
+            <select
+              value={assignTo}
+              onChange={e => setAssignTo(e.target.value)}
+              style={{ background: COLORS.surface2, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px 14px", color: COLORS.text, fontSize: 14 }}>
               <option>All Clients</option>
-              {mockClients.map(c => <option key={c.id}>{c.name}</option>)}
             </select>
           </div>
-          <div style={{
-            border: `2px dashed ${COLORS.border}`, borderRadius: 10, padding: 32,
-            textAlign: "center", cursor: "pointer"
-          }}
-            onMouseEnter={e => e.currentTarget.style.borderColor = COLORS.accent + "60"}
-            onMouseLeave={e => e.currentTarget.style.borderColor = COLORS.border}
-          >
-            <div style={{ fontSize: 32, marginBottom: 8 }}>📁</div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textMuted }}>Drop files here or click to upload</div>
-            <div style={{ fontSize: 12, color: COLORS.textDim, marginTop: 4 }}>PDF, JPG, PNG up to 20MB</div>
+
+          {/* Drag and drop zone */}
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={e => { e.preventDefault(); setDragOver(false); handleFileSelect(e.dataTransfer.files[0]); }}
+            style={{
+              border: `2px dashed ${dragOver ? COLORS.accent : selectedFile ? COLORS.success : COLORS.border}`,
+              borderRadius: 10, padding: 32, textAlign: "center", cursor: "pointer",
+              background: dragOver ? COLORS.accentBg : selectedFile ? COLORS.successBg : "transparent",
+              transition: "all 0.2s"
+            }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png"
+              style={{ display: "none" }}
+              onChange={e => handleFileSelect(e.target.files[0])}
+            />
+            {selectedFile ? (
+              <>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>✅</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.success }}>{selectedFile.name}</div>
+                <div style={{ fontSize: 12, color: COLORS.textDim, marginTop: 4 }}>
+                  {(selectedFile.size / 1024 / 1024).toFixed(2)} MB — click to change
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>📁</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textMuted }}>Drop file here or click to upload</div>
+                <div style={{ fontSize: 12, color: COLORS.textDim, marginTop: 4 }}>PDF, JPG, PNG up to 20MB</div>
+              </>
+            )}
           </div>
-          <Textarea label="Notes (optional)" placeholder="Any instructions for the client..." />
+
           <div style={{ display: "flex", gap: 12 }}>
-            <Button variant="primary" style={{ flex: 1, justifyContent: "center" }} onClick={() => setShowModal(false)}>Upload Plan</Button>
-            <Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
+            <button
+              onClick={handleUpload}
+              disabled={uploading}
+              style={{
+                flex: 1, background: uploading ? COLORS.surface3 : COLORS.accent,
+                color: uploading ? COLORS.textMuted : "#0A0A0B",
+                border: "none", borderRadius: 8, padding: "11px 0",
+                fontSize: 14, fontWeight: 700, cursor: uploading ? "not-allowed" : "pointer"
+              }}>
+              {uploading ? "Uploading..." : "Upload Plan"}
+            </button>
+            <Button variant="secondary" onClick={() => { setShowModal(false); setSelectedFile(null); setPlanName(""); }}>
+              Cancel
+            </Button>
           </div>
         </div>
       </Modal>
@@ -1615,7 +1734,7 @@ const Dashboard = ({ user }) => {
       switch (activeTab) {
         case "overview": return <CoachOverview />;
         case "clients": return <CoachClients user={user} />;
-        case "workouts": return <CoachWorkouts />;
+        case "workouts": return <CoachWorkouts  user={user} />;
         case "diets": return <CoachDiets />;
         case "payments": return <CoachPayments />;
         case "packages": return <CoachPackages />;
