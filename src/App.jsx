@@ -3,7 +3,8 @@ import { auth } from "./firebase";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  updateProfile
+  updateProfile,
+  signOut
 } from "firebase/auth";
 
 import { saveProfile } from "./db";
@@ -230,7 +231,7 @@ const Modal = ({ isOpen, onClose, title, children }) => {
 // NAV
 // ─────────────────────────────────────────────────────────────────────────────
 
-const TopNav = ({ user, onNavigate, currentPage }) => {
+const TopNav = ({ user, onNavigate, currentPage, onLogout }) => {
   return (
     <nav style={{
       position: "sticky", top: 0, zIndex: 100,
@@ -265,14 +266,23 @@ const TopNav = ({ user, onNavigate, currentPage }) => {
               color: COLORS.accent, fontWeight: 600
             }}>{user.role === "coach" ? "🏋️ Coach" : "💪 Client"}</div>
             <button onClick={() => onNavigate("dashboard")} style={{
-              display: "flex", alignItems: "center", gap: 8,
-              background: COLORS.surface2, border: `1px solid ${COLORS.border}`,
-              borderRadius: 8, padding: "6px 14px", cursor: "pointer",
-              color: COLORS.text, fontSize: 13, fontWeight: 600
-            }}>
-              <Avatar name={user.name} size={24} />
-              {user.name.split(" ")[0]}
-            </button>
+  display: "flex", alignItems: "center", gap: 8,
+  background: COLORS.surface2, border: `1px solid ${COLORS.border}`,
+  borderRadius: 8, padding: "6px 14px", cursor: "pointer",
+  color: COLORS.text, fontSize: 13, fontWeight: 600
+}}>
+  <Avatar name={user.name} size={24} />
+  {user.name.split(" ")[0]}
+</button>
+
+<button onClick={onLogout} style={{
+  display: "flex", alignItems: "center", gap: 6,
+  background: COLORS.dangerBg, border: `1px solid ${COLORS.danger}30`,
+  borderRadius: 8, padding: "6px 14px", cursor: "pointer",
+  color: COLORS.danger, fontSize: 13, fontWeight: 600
+}}>
+  🚪 Logout
+</button>
           </div>
         )}
       </div>
@@ -1643,8 +1653,17 @@ export default function App() {
   const [page, setPage] = useState("landing");
   const [user, setUser] = useState(null);
 
-  const navigate = (p) => setPage(p);
-  const login = (u) => setUser(u);
+const navigate = (p) => setPage(p);
+const login = (u) => setUser(u);
+const logout = async () => {
+  try {
+    await signOut(auth);
+  } catch (err) {
+    console.error("Logout error:", err);
+  }
+  setUser(null);
+  setPage("landing");
+};
 
   return (
     <div style={{ fontFamily: "'DM Sans', 'Helvetica Neue', sans-serif", background: COLORS.bg, minHeight: "100vh" }}>
@@ -1660,7 +1679,7 @@ export default function App() {
       `}</style>
 
       {page !== "dashboard" && (
-        <TopNav user={user} onNavigate={navigate} currentPage={page} />
+        <TopNav user={user} onNavigate={navigate} currentPage={page}onLogout={logout} />
       )}
 
       {page === "landing" && <LandingPage onNavigate={navigate} />}
@@ -1669,7 +1688,7 @@ export default function App() {
       {page === "public-coach" && <PublicCoachPage onNavigate={navigate} />}
       {page === "dashboard" && user && (
         <div>
-          <TopNav user={user} onNavigate={navigate} currentPage={page} />
+          <TopNav user={user} onNavigate={navigate} currentPage={page}onLogout={logout} />
           <Dashboard user={user} />
         </div>
       )}
