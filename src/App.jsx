@@ -6,6 +6,8 @@ import {
   updateProfile
 } from "firebase/auth";
 
+import { saveProfile } from "./db";
+
 const COLORS = {
   bg: "#0A0A0B",
   surface: "#111113",
@@ -467,22 +469,20 @@ const AuthPage = ({ mode, onNavigate, onLogin }) => {
       return;
     }
 
-    try {
+   try {
       let userCredential;
 
       if (mode === "signup") {
-        // Create new account
         userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        // Save their name to Firebase profile
         await updateProfile(userCredential.user, { displayName: name });
+        // ← NEW: save to Supabase
+        await saveProfile(userCredential.user.uid, name, email, role);
       } else {
-        // Sign in existing account
         userCredential = await signInWithEmailAndPassword(auth, email, password);
       }
 
       const firebaseUser = userCredential.user;
 
-      // Build user object for the app
       const user = {
         name: firebaseUser.displayName || email.split("@")[0],
         email: firebaseUser.email,
@@ -494,7 +494,6 @@ const AuthPage = ({ mode, onNavigate, onLogin }) => {
       onNavigate("dashboard");
 
     } catch (err) {
-      // Show friendly error messages
       if (err.code === "auth/email-already-in-use") {
         setError("This email is already registered. Try signing in instead.");
       } else if (err.code === "auth/user-not-found") {
