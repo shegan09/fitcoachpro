@@ -1,4 +1,10 @@
 import { useState, useEffect, useRef } from "react";
+import { auth } from "./firebase";
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile
+} from "firebase/auth";
 
 const COLORS = {
   bg: "#0A0A0B",
@@ -431,22 +437,79 @@ const LandingPage = ({ onNavigate }) => {
 // AUTH PAGES
 // ─────────────────────────────────────────────────────────────────────────────
 
+
 const AuthPage = ({ mode, onNavigate, onLogin }) => {
   const [role, setRole] = useState("coach");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = () => {
-    if (!email) return;
-    const user = {
-      name: name || (role === "coach" ? "John Carter" : "Mike Rodriguez"),
-      email,
-      role,
-      id: role === "coach" ? "johnfitness" : "client1"
-    };
-    onLogin(user);
-    onNavigate("dashboard");
+  const handleSubmit = async () => {
+    setError("");
+    setLoading(true);
+
+    // Basic validation
+    if (!email || !password) {
+      setError("Please fill in all fields.");
+      setLoading(false);
+      return;
+    }
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      setLoading(false);
+      return;
+    }
+    if (mode === "signup" && !name) {
+      setError("Please enter your name.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      let userCredential;
+
+      if (mode === "signup") {
+        // Create new account
+        userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        // Save their name to Firebase profile
+        await updateProfile(userCredential.user, { displayName: name });
+      } else {
+        // Sign in existing account
+        userCredential = await signInWithEmailAndPassword(auth, email, password);
+      }
+
+      const firebaseUser = userCredential.user;
+
+      // Build user object for the app
+      const user = {
+        name: firebaseUser.displayName || email.split("@")[0],
+        email: firebaseUser.email,
+        uid: firebaseUser.uid,
+        role: role,
+      };
+
+      onLogin(user);
+      onNavigate("dashboard");
+
+    } catch (err) {
+      // Show friendly error messages
+      if (err.code === "auth/email-already-in-use") {
+        setError("This email is already registered. Try signing in instead.");
+      } else if (err.code === "auth/user-not-found") {
+        setError("No account found with this email. Try signing up.");
+      } else if (err.code === "auth/wrong-password") {
+        setError("Wrong password. Please try again.");
+      } else if (err.code === "auth/invalid-email") {
+        setError("Please enter a valid email address.");
+      } else if (err.code === "auth/invalid-credential") {
+        setError("Wrong email or password. Please try again.");
+      } else {
+        setError("Something went wrong. Please try again.");
+      }
+      setLoading(false);
+    }
   };
 
   return (
@@ -487,13 +550,40 @@ const AuthPage = ({ mode, onNavigate, onLogin }) => {
           ))}
         </div>
 
+        {/* Error Message */}
+        {error && (
+          <div style={{
+            background: COLORS.dangerBg, border: `1px solid ${COLORS.danger}40`,
+            borderRadius: 8, padding: "10px 14px", marginBottom: 16,
+            fontSize: 13, color: COLORS.danger
+          }}>
+            ⚠️ {error}
+          </div>
+        )}
+
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {mode === "signup" && <Input label="Full Name" placeholder="Your full name" value={name} onChange={e => setName(e.target.value)} />}
-          <Input label="Email" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} />
-          <Input label="Password" type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} />
-          <Button variant="primary" size="lg" onClick={handleSubmit} style={{ width: "100%", justifyContent: "center" }}>
-            {mode === "login" ? "Sign In" : "Create Account"} →
-          </Button>
+          {mode === "signup" && (
+            <Input label="Full Name" placeholder="Your full name"
+              value={name} onChange={e => setName(e.target.value)} />
+          )}
+          <Input label="Email" type="email" placeholder="you@example.com"
+            value={email} onChange={e => setEmail(e.target.value)} />
+          <Input label="Password" type="password" placeholder="Min. 6 characters"
+            value={password} onChange={e => setPassword(e.target.value)} />
+
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            style={{
+              background: loading ? COLORS.surface3 : COLORS.accent,
+              color: loading ? COLORS.textMuted : "#0A0A0B",
+              border: "none", borderRadius: 8, padding: "12px 22px",
+              fontSize: 15, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer",
+              width: "100%", marginTop: 4
+            }}
+          >
+            {loading ? "Please wait..." : (mode === "login" ? "Sign In →" : "Create Account →")}
+          </button>
         </div>
 
         <div style={{ textAlign: "center", marginTop: 24, fontSize: 14, color: COLORS.textMuted }}>
