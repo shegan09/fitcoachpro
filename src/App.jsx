@@ -6,11 +6,23 @@ import {
   updateProfile,
   signOut
 } from "firebase/auth";
-
-import { saveProfile } from "./db";
-import { getClients, updateClientStatus } from "./db";
-import { uploadWorkoutFile, saveWorkout, getCoachWorkouts, deleteWorkoutById, uploadDietFile, saveDiet } from "./db";
-
+import {
+  saveProfile,
+  getClients,
+  updateClientStatus,
+  uploadWorkoutFile,
+  saveWorkout,
+  getCoachWorkouts,
+  deleteWorkoutById,
+  uploadPaymentProof,
+  submitPayment,
+  getCoachPayments,
+  getClientPayments,
+  updatePaymentStatus,
+  getPackages,
+  createPackage,
+  deletePackage
+} from "./db";
 
 const COLORS = {
   bg: "#0A0A0B",
@@ -1237,105 +1249,512 @@ const CoachDiets = () => {
   );
 };
 
-const CoachPayments = () => (
-  <div>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-      <h2 style={{ fontSize: 24, fontWeight: 800, color: COLORS.text, margin: 0, letterSpacing: "-0.5px" }}>Payments</h2>
-      <div style={{ display: "flex", gap: 12 }}>
-        <Stat label="Total Revenue" value="$1,096" />
-        <Stat label="Pending" value="$99" />
-      </div>
-    </div>
+const CoachPayments = ({ user }) => {
+  const [payments, setPayments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [viewingProof, setViewingProof] = useState(null);
 
-    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, overflow: "hidden" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr style={{ borderBottom: `1px solid ${COLORS.border}` }}>
-            {["Client", "Package", "Amount", "Date", "Proof", "Status", "Actions"].map(h => (
-              <th key={h} style={{ padding: "12px 16px", fontSize: 11, fontWeight: 700, color: COLORS.textDim, textAlign: "left", letterSpacing: "0.08em", textTransform: "uppercase" }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {mockPayments.map((p, i) => (
-            <tr key={p.id} style={{ borderBottom: i < mockPayments.length - 1 ? `1px solid ${COLORS.border}` : "none" }}>
-              <td style={{ padding: "14px 16px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Avatar name={p.client} size={30} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: COLORS.text }}>{p.client}</span>
-                </div>
-              </td>
-              <td style={{ padding: "14px 16px", fontSize: 13, color: COLORS.textMuted }}>{p.package}</td>
-              <td style={{ padding: "14px 16px", fontSize: 15, fontWeight: 700, color: COLORS.accent }}>${p.amount}</td>
-              <td style={{ padding: "14px 16px", fontSize: 13, color: COLORS.textMuted }}>{p.date}</td>
-              <td style={{ padding: "14px 16px" }}>
-                <button style={{
-                  background: COLORS.infoBg, color: COLORS.info, border: "none",
-                  borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer", fontWeight: 600
-                }}>View Proof</button>
-              </td>
-              <td style={{ padding: "14px 16px" }}><Badge variant={p.status}>{p.status}</Badge></td>
-              <td style={{ padding: "14px 16px" }}>
-                {p.status === "pending" && (
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <Button variant="success" size="sm">✓ Approve</Button>
-                    <Button variant="danger" size="sm">✗ Reject</Button>
-                  </div>
-                )}
-                {p.status === "approved" && <span style={{ fontSize: 12, color: COLORS.textDim }}>Completed</span>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  </div>
-);
+  useEffect(() => { loadPayments(); }, []);
 
-const CoachPackages = () => {
-  const [showModal, setShowModal] = useState(false);
-  const [pkgName, setPkgName] = useState("");
-  const [pkgPrice, setPkgPrice] = useState("");
-  const [pkgDuration, setPkgDuration] = useState("");
+  const loadPayments = async () => {
+    setLoading(true);
+    const data = await getCoachPayments(user?.uid);
+    setPayments(data);
+    setLoading(false);
+  };
+
+  const handleStatus = async (id, status) => {
+    await updatePaymentStatus(id, status);
+    await loadPayments();
+  };
+
+  const totalRevenue = payments
+    .filter(p => p.status === "approved")
+    .reduce((sum, p) => sum + Number(p.amount), 0);
+
+  const pendingAmount = payments
+    .filter(p => p.status === "pending")
+    .reduce((sum, p) => sum + Number(p.amount), 0);
 
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <h2 style={{ fontSize: 24, fontWeight: 800, color: COLORS.text, margin: 0, letterSpacing: "-0.5px" }}>Coaching Packages</h2>
+        <h2 style={{ fontSize: 24, fontWeight: 800, color: COLORS.text, margin: 0, letterSpacing: "-0.5px" }}>
+          Payments
+        </h2>
+      </div>
+
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16, marginBottom: 24 }}>
+        <Stat label="Total Revenue" value={`$${totalRevenue}`} icon="💰" />
+        <Stat label="Pending" value={`$${pendingAmount}`} icon="⏳" />
+        <Stat label="Total Payments" value={payments.length} icon="💳" />
+      </div>
+
+      {/* Loading */}
+      {loading && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 48, textAlign: "center" }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+          <div style={{ color: COLORS.textMuted }}>Loading payments...</div>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!loading && payments.length === 0 && (
+        <div style={{ background: COLORS.surface, border: `2px dashed ${COLORS.border}`, borderRadius: 14, padding: 48, textAlign: "center" }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>💳</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: COLORS.text, marginBottom: 8 }}>No payments yet</div>
+          <div style={{ color: COLORS.textMuted }}>Payments will appear here when clients submit proof</div>
+        </div>
+      )}
+
+      {/* Payments table */}
+      {!loading && payments.length > 0 && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+                {["Client ID", "Package", "Amount", "Date", "Proof", "Status", "Actions"].map(h => (
+                  <th key={h} style={{ padding: "12px 16px", fontSize: 11, fontWeight: 700, color: COLORS.textDim, textAlign: "left", letterSpacing: "0.08em", textTransform: "uppercase" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {payments.map((p, i) => (
+                <tr key={p.id} style={{
+                  borderBottom: i < payments.length - 1 ? `1px solid ${COLORS.border}` : "none",
+                  transition: "background 0.15s"
+                }}
+                  onMouseEnter={e => e.currentTarget.style.background = COLORS.surface2}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                >
+                  <td style={{ padding: "14px 16px" }}>
+                    <div style={{ fontSize: 13, color: COLORS.textMuted }}>
+                      {p.client_id?.slice(0, 8)}...
+                    </div>
+                  </td>
+                  <td style={{ padding: "14px 16px", fontSize: 13, color: COLORS.textMuted }}>
+                    {p.package_name || "—"}
+                  </td>
+                  <td style={{ padding: "14px 16px", fontSize: 15, fontWeight: 700, color: COLORS.accent }}>
+                    ${p.amount}
+                  </td>
+                  <td style={{ padding: "14px 16px", fontSize: 13, color: COLORS.textMuted }}>
+                    {new Date(p.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                  </td>
+                  <td style={{ padding: "14px 16px" }}>
+                    {p.proof_url ? (
+                      <button
+                        onClick={() => setViewingProof(p.proof_url)}
+                        style={{ background: COLORS.infoBg, color: COLORS.info, border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>
+                        👁 View
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: 12, color: COLORS.textDim }}>No proof</span>
+                    )}
+                  </td>
+                  <td style={{ padding: "14px 16px" }}>
+                    <Badge variant={p.status}>{p.status}</Badge>
+                  </td>
+                  <td style={{ padding: "14px 16px" }}>
+                    {p.status === "pending" && (
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <Button variant="success" size="sm" onClick={() => handleStatus(p.id, "approved")}>✓ Approve</Button>
+                        <Button variant="danger" size="sm" onClick={() => handleStatus(p.id, "rejected")}>✗ Reject</Button>
+                      </div>
+                    )}
+                    {p.status === "approved" && <span style={{ fontSize: 12, color: COLORS.success, fontWeight: 600 }}>✓ Approved</span>}
+                    {p.status === "rejected" && <span style={{ fontSize: 12, color: COLORS.danger, fontWeight: 600 }}>✗ Rejected</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Proof viewer modal */}
+      <Modal isOpen={!!viewingProof} onClose={() => setViewingProof(null)} title="Payment Proof">
+        {viewingProof && (
+          <div style={{ textAlign: "center" }}>
+            <img
+              src={viewingProof}
+              alt="Payment proof"
+              style={{ width: "100%", borderRadius: 8, marginBottom: 16 }}
+              onError={e => e.target.style.display = "none"}
+            />
+            <a href={viewingProof} target="_blank" rel="noreferrer">
+              <Button variant="primary">Open Full Size</Button>
+            </a>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+};
+
+const ClientPayment = ({ user }) => {
+  const [showModal, setShowModal] = useState(false);
+  const [selectedPkg, setSelectedPkg] = useState("Transformation");
+  const [amount, setAmount] = useState("");
+  const [reference, setReference] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [payments, setPayments] = useState([]);
+  const [dragOver, setDragOver] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const fileInputRef = useRef(null);
+  const coach = coaches[0];
+
+  useEffect(() => { loadMyPayments(); }, []);
+
+  const loadMyPayments = async () => {
+    const data = await getClientPayments(user?.uid);
+    setPayments(data);
+  };
+
+  const handleSubmit = async () => {
+    if (!amount) { alert("Please enter the amount you transferred"); return; }
+    if (!selectedFile) { alert("Please upload your payment screenshot"); return; }
+
+    setUploading(true);
+    const proofUrl = await uploadPaymentProof(user?.uid, selectedFile);
+
+    if (proofUrl) {
+      await submitPayment(user?.uid, "coach_id_here", {
+        package_name: selectedPkg,
+        amount: Number(amount),
+        proof_url: proofUrl,
+        status: "pending"
+      });
+      await loadMyPayments();
+      setShowModal(false);
+      setSelectedFile(null);
+      setAmount("");
+      setReference("");
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 4000);
+    } else {
+      alert("Upload failed. Please try again.");
+    }
+    setUploading(false);
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 24, fontWeight: 800, color: COLORS.text, marginBottom: 24, letterSpacing: "-0.5px" }}>
+        Make Payment
+      </h2>
+
+      {/* Success banner */}
+      {success && (
+        <div style={{
+          background: COLORS.successBg, border: `1px solid ${COLORS.success}40`,
+          borderRadius: 12, padding: 16, marginBottom: 20,
+          fontSize: 14, color: COLORS.success, fontWeight: 600
+        }}>
+          ✅ Payment submitted! Your coach will approve it shortly.
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        {/* Packages */}
+        <div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: COLORS.text, marginBottom: 16 }}>
+            Choose Package
+          </h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {coach.packages.map(pkg => (
+              <div key={pkg.id}
+                onClick={() => { setSelectedPkg(pkg.name); setAmount(pkg.price.toString()); }}
+                style={{
+                  background: COLORS.surface,
+                  border: `2px solid ${selectedPkg === pkg.name ? COLORS.accent : COLORS.border}`,
+                  borderRadius: 12, padding: 18, cursor: "pointer", transition: "all 0.15s"
+                }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: COLORS.text }}>{pkg.name}</div>
+                    <div style={{ fontSize: 13, color: COLORS.textMuted }}>{pkg.duration}</div>
+                  </div>
+                  <div style={{ fontSize: 24, fontWeight: 900, color: selectedPkg === pkg.name ? COLORS.accent : COLORS.text }}>
+                    ${pkg.price}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Bank Details */}
+        <div>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: COLORS.text, marginBottom: 16 }}>
+            Bank Transfer Details
+          </h3>
+          <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 24, marginBottom: 16 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {[
+                ["Bank", "Chase Bank"],
+                ["Account Name", "John Carter"],
+                ["Account No.", "••••••7891"],
+                ["Routing No.", "••••••1234"],
+              ].map(([label, value]) => (
+                <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${COLORS.border}` }}>
+                  <span style={{ fontSize: 13, color: COLORS.textMuted }}>{label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.text }}>{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ background: COLORS.warningBg, border: `1px solid ${COLORS.warning}30`, borderRadius: 10, padding: 14, marginBottom: 20, fontSize: 13, color: COLORS.warning }}>
+            ⚠️ Transfer the exact amount and upload your payment screenshot below.
+          </div>
+
+          <Button variant="primary" size="lg"
+            style={{ width: "100%", justifyContent: "center" }}
+            onClick={() => setShowModal(true)}>
+            📸 Upload Payment Proof
+          </Button>
+        </div>
+      </div>
+
+      {/* My payment history */}
+      {payments.length > 0 && (
+        <div style={{ marginTop: 32 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: COLORS.text, marginBottom: 16 }}>
+            My Payment History
+          </h3>
+          <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${COLORS.border}` }}>
+                  {["Package", "Amount", "Date", "Status"].map(h => (
+                    <th key={h} style={{ padding: "12px 16px", fontSize: 11, fontWeight: 700, color: COLORS.textDim, textAlign: "left", letterSpacing: "0.08em", textTransform: "uppercase" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((p, i) => (
+                  <tr key={p.id} style={{ borderBottom: i < payments.length - 1 ? `1px solid ${COLORS.border}` : "none" }}>
+                    <td style={{ padding: "12px 16px", fontSize: 13, color: COLORS.textMuted }}>{p.package_name}</td>
+                    <td style={{ padding: "12px 16px", fontSize: 14, fontWeight: 700, color: COLORS.accent }}>${p.amount}</td>
+                    <td style={{ padding: "12px 16px", fontSize: 13, color: COLORS.textMuted }}>
+                      {new Date(p.created_at).toLocaleDateString()}
+                    </td>
+                    <td style={{ padding: "12px 16px" }}>
+                      <Badge variant={p.status}>{p.status}</Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Upload modal */}
+      <Modal isOpen={showModal} onClose={() => { setShowModal(false); setSelectedFile(null); }} title="Upload Payment Proof">
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ background: COLORS.accentBg, border: `1px solid ${COLORS.accent}30`, borderRadius: 8, padding: 12, fontSize: 13, color: COLORS.accent }}>
+            📦 Selected: <strong>{selectedPkg}</strong>
+          </div>
+
+          <Input label="Amount Transferred ($)" type="number"
+            placeholder="249" value={amount}
+            onChange={e => setAmount(e.target.value)} />
+
+          <Input label="Transaction Reference (optional)"
+            placeholder="REF123456" value={reference}
+            onChange={e => setReference(e.target.value)} />
+
+          {/* Drag and drop */}
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={e => { e.preventDefault(); setDragOver(false); setSelectedFile(e.dataTransfer.files[0]); }}
+            style={{
+              border: `2px dashed ${dragOver ? COLORS.accent : selectedFile ? COLORS.success : COLORS.border}`,
+              borderRadius: 10, padding: 32, textAlign: "center", cursor: "pointer",
+              background: dragOver ? COLORS.accentBg : selectedFile ? COLORS.successBg : "transparent",
+              transition: "all 0.2s"
+            }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".jpg,.jpeg,.png,.pdf"
+              style={{ display: "none" }}
+              onChange={e => setSelectedFile(e.target.files[0])}
+            />
+            {selectedFile ? (
+              <>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>✅</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.success }}>{selectedFile.name}</div>
+                <div style={{ fontSize: 12, color: COLORS.textDim, marginTop: 4 }}>Click to change</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>📸</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textMuted }}>Upload payment screenshot</div>
+                <div style={{ fontSize: 12, color: COLORS.textDim, marginTop: 4 }}>JPG, PNG, PDF</div>
+              </>
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: 12 }}>
+            <button
+              onClick={handleSubmit}
+              disabled={uploading}
+              style={{
+                flex: 1, background: uploading ? COLORS.surface3 : COLORS.accent,
+                color: uploading ? COLORS.textMuted : "#0A0A0B",
+                border: "none", borderRadius: 8, padding: "11px 0",
+                fontSize: 14, fontWeight: 700, cursor: uploading ? "not-allowed" : "pointer"
+              }}>
+              {uploading ? "Submitting..." : "Submit for Approval"}
+            </button>
+            <Button variant="secondary" onClick={() => { setShowModal(false); setSelectedFile(null); }}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+const CoachPackages = ({ user }) => {
+  const [showModal, setShowModal] = useState(false);
+  const [packages, setPackages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [pkgName, setPkgName] = useState("");
+  const [pkgPrice, setPkgPrice] = useState("");
+  const [pkgDuration, setPkgDuration] = useState("");
+  const [pkgFeatures, setPkgFeatures] = useState("");
+
+  useEffect(() => { loadPackages(); }, []);
+
+  const loadPackages = async () => {
+    setLoading(true);
+    const data = await getPackages(user?.uid);
+    setPackages(data);
+    setLoading(false);
+  };
+
+  const handleCreate = async () => {
+    if (!pkgName || !pkgPrice || !pkgDuration) {
+      alert("Please fill in all fields");
+      return;
+    }
+    const featuresArray = pkgFeatures
+      .split("\n")
+      .map(f => f.trim())
+      .filter(f => f.length > 0);
+    await createPackage(user?.uid, {
+      name: pkgName,
+      price: Number(pkgPrice),
+      duration: pkgDuration,
+      features: featuresArray,
+      is_popular: false
+    });
+    await loadPackages();
+    setShowModal(false);
+    setPkgName("");
+    setPkgPrice("");
+    setPkgDuration("");
+    setPkgFeatures("");
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm("Delete this package?")) {
+      await deletePackage(id);
+      await loadPackages();
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <h2 style={{ fontSize: 24, fontWeight: 800, color: COLORS.text, margin: 0, letterSpacing: "-0.5px" }}>
+          Coaching Packages
+          {!loading && <span style={{ fontSize: 16, color: COLORS.textMuted, marginLeft: 8 }}>({packages.length})</span>}
+        </h2>
         <Button variant="primary" onClick={() => setShowModal(true)}>+ Create Package</Button>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 20 }}>
-        {coaches[0].packages.map(pkg => (
-          <div key={pkg.id} style={{
-            background: COLORS.surface,
-            border: `2px solid ${pkg.popular ? COLORS.accent + "50" : COLORS.border}`,
-            borderRadius: 16, padding: 24
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-              <div>
-                <div style={{ fontSize: 17, fontWeight: 800, color: COLORS.text }}>{pkg.name}</div>
-                <div style={{ fontSize: 13, color: COLORS.textMuted }}>{pkg.duration}</div>
+
+      {loading && (
+        <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 48, textAlign: "center" }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+          <div style={{ color: COLORS.textMuted }}>Loading packages...</div>
+        </div>
+      )}
+
+      {!loading && packages.length === 0 && (
+        <div style={{ background: COLORS.surface, border: `2px dashed ${COLORS.border}`, borderRadius: 14, padding: 48, textAlign: "center" }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>📦</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: COLORS.text, marginBottom: 8 }}>No packages yet</div>
+          <div style={{ color: COLORS.textMuted, marginBottom: 24 }}>Create your first coaching package</div>
+          <Button variant="primary" onClick={() => setShowModal(true)}>+ Create First Package</Button>
+        </div>
+      )}
+
+      {!loading && packages.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 20 }}>
+          {packages.map(pkg => (
+            <div key={pkg.id} style={{
+              background: COLORS.surface,
+              border: `2px solid ${pkg.is_popular ? COLORS.accent + "50" : COLORS.border}`,
+              borderRadius: 16, padding: 24
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+                <div>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: COLORS.text }}>{pkg.name}</div>
+                  <div style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 4 }}>{pkg.duration}</div>
+                </div>
+                {pkg.is_popular && <Badge variant="popular">Popular</Badge>}
               </div>
-              {pkg.popular && <Badge variant="popular">Popular</Badge>}
+              <div style={{ fontSize: 36, fontWeight: 900, color: COLORS.accent, letterSpacing: "-1px", marginBottom: 16 }}>
+                ${pkg.price}
+              </div>
+              {pkg.features && pkg.features.length > 0 && (
+                <ul style={{ listStyle: "none", padding: 0, margin: "0 0 20px", display: "flex", flexDirection: "column", gap: 8 }}>
+                  {pkg.features.map((f, i) => (
+                    <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: COLORS.textMuted, alignItems: "flex-start" }}>
+                      <span style={{ color: COLORS.success, flexShrink: 0 }}>✓</span> {f}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <Button variant="danger" size="sm" onClick={() => handleDelete(pkg.id)}>Delete</Button>
             </div>
-            <div style={{ fontSize: 36, fontWeight: 900, color: COLORS.accent, letterSpacing: "-1px", marginBottom: 20 }}>${pkg.price}</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Button variant="secondary" size="sm">Edit</Button>
-              <Button variant="danger" size="sm">Delete</Button>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
+
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Create New Package">
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <Input label="Package Name" placeholder="e.g., Elite Coaching" value={pkgName} onChange={e => setPkgName(e.target.value)} />
+          <Input label="Package Name" placeholder="e.g., Elite Coaching"
+            value={pkgName} onChange={e => setPkgName(e.target.value)} />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Input label="Price ($)" type="number" placeholder="199" value={pkgPrice} onChange={e => setPkgPrice(e.target.value)} />
-            <Input label="Duration" placeholder="e.g., 3 Months" value={pkgDuration} onChange={e => setPkgDuration(e.target.value)} />
+            <Input label="Price ($)" type="number" placeholder="199"
+              value={pkgPrice} onChange={e => setPkgPrice(e.target.value)} />
+            <Input label="Duration" placeholder="e.g., 3 Months"
+              value={pkgDuration} onChange={e => setPkgDuration(e.target.value)} />
           </div>
-          <Textarea label="Features (one per line)" placeholder="Custom workout plan&#10;Diet chart&#10;Weekly check-ins" />
+          <Textarea
+            label="Features (one per line)"
+            placeholder={"Custom workout plan\nDiet chart\nWeekly check-ins"}
+            value={pkgFeatures}
+            onChange={e => setPkgFeatures(e.target.value)}
+          />
+          <div style={{ background: COLORS.surface2, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 12, fontSize: 13, color: COLORS.textMuted }}>
+            💡 Each line becomes a feature bullet point
+          </div>
           <div style={{ display: "flex", gap: 12 }}>
-            <Button variant="primary" style={{ flex: 1, justifyContent: "center" }} onClick={() => setShowModal(false)}>Create Package</Button>
+            <Button variant="primary" style={{ flex: 1, justifyContent: "center" }} onClick={handleCreate}>
+              Create Package
+            </Button>
             <Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
           </div>
         </div>
@@ -1637,91 +2056,6 @@ const ClientSubscription = () => (
   </div>
 );
 
-const ClientPayment = () => {
-  const [showModal, setShowModal] = useState(false);
-  const coach = coaches[0];
-
-  return (
-    <div>
-      <h2 style={{ fontSize: 24, fontWeight: 800, color: COLORS.text, marginBottom: 24, letterSpacing: "-0.5px" }}>Make Payment</h2>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-        <div>
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: COLORS.text, marginBottom: 16 }}>Choose Package</h3>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {coach.packages.map(pkg => (
-              <div key={pkg.id} style={{
-                background: COLORS.surface, border: `1px solid ${pkg.popular ? COLORS.accent + "40" : COLORS.border}`,
-                borderRadius: 12, padding: 18, cursor: "pointer"
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: COLORS.text }}>{pkg.name}</div>
-                    <div style={{ fontSize: 13, color: COLORS.textMuted }}>{pkg.duration}</div>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: 24, fontWeight: 900, color: pkg.popular ? COLORS.accent : COLORS.text }}>${pkg.price}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: COLORS.text, marginBottom: 16 }}>Payment Instructions</h3>
-          <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 24, marginBottom: 16 }}>
-            <div style={{ fontSize: 13, color: COLORS.textMuted, lineHeight: 1.8 }}>
-              <div style={{ fontWeight: 700, color: COLORS.text, marginBottom: 12 }}>Bank Transfer Details</div>
-              <div><strong style={{ color: COLORS.text }}>Bank:</strong> Chase Bank</div>
-              <div><strong style={{ color: COLORS.text }}>Name:</strong> John Carter</div>
-              <div><strong style={{ color: COLORS.text }}>Account:</strong> ••••••7891</div>
-              <div><strong style={{ color: COLORS.text }}>Routing:</strong> ••••••1234</div>
-            </div>
-          </div>
-          <div style={{
-            background: COLORS.warningBg, border: `1px solid ${COLORS.warning}30`,
-            borderRadius: 10, padding: 16, marginBottom: 20, fontSize: 13, color: COLORS.warning
-          }}>
-            ⚠️ Transfer exact amount and upload your payment screenshot for approval.
-          </div>
-          <Button variant="primary" size="lg" style={{ width: "100%", justifyContent: "center" }} onClick={() => setShowModal(true)}>
-            Upload Payment Proof
-          </Button>
-        </div>
-      </div>
-
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Upload Payment Proof">
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <label style={{ fontSize: 13, fontWeight: 600, color: COLORS.textMuted }}>Selected Package</label>
-            <select style={{
-              background: COLORS.surface2, border: `1px solid ${COLORS.border}`,
-              borderRadius: 8, padding: "10px 14px", color: COLORS.text, fontSize: 14
-            }}>
-              {coach.packages.map(p => <option key={p.id}>{p.name} — ${p.price}</option>)}
-            </select>
-          </div>
-          <Input label="Amount Transferred ($)" type="number" placeholder="249" />
-          <Input label="Transaction Reference (optional)" placeholder="REF123456" />
-          <div style={{
-            border: `2px dashed ${COLORS.border}`, borderRadius: 10, padding: 32,
-            textAlign: "center", cursor: "pointer"
-          }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>📸</div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textMuted }}>Upload Payment Screenshot</div>
-            <div style={{ fontSize: 12, color: COLORS.textDim, marginTop: 4 }}>JPG, PNG, PDF</div>
-          </div>
-          <div style={{ display: "flex", gap: 12 }}>
-            <Button variant="primary" style={{ flex: 1, justifyContent: "center" }} onClick={() => setShowModal(false)}>Submit for Approval</Button>
-            <Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
-          </div>
-        </div>
-      </Modal>
-    </div>
-  );
-};
-
 // ─────────────────────────────────────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1736,8 +2070,8 @@ const Dashboard = ({ user }) => {
         case "clients": return <CoachClients user={user} />;
         case "workouts": return <CoachWorkouts  user={user} />;
         case "diets": return <CoachDiets />;
-        case "payments": return <CoachPayments />;
-        case "packages": return <CoachPackages />;
+        case "payments": return <CoachPayments user={user}/>;
+        case "packages": return <CoachPackages user={user}/>;
         case "profile": return <CoachProfile user={user} />;
         default: return <CoachOverview />;
       }
@@ -1748,7 +2082,7 @@ const Dashboard = ({ user }) => {
         case "diets": return <ClientDiets />;
         case "progress": return <ClientProgress />;
         case "subscription": return <ClientSubscription />;
-        case "payment": return <ClientPayment />;
+        case "payment": return <ClientPayment user={user} />;
         default: return <ClientOverview />;
       }
     }
