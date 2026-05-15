@@ -1,54 +1,38 @@
 import { useState, useEffect, useRef } from "react";
+import { useAuth } from "./context/AuthContext";
 import { auth } from "./firebase";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   updateProfile,
-  signOut
 } from "firebase/auth";
-import {
-  saveProfile,
-  getClients,
-  updateClientStatus,
-  uploadWorkoutFile,
-  saveWorkout,
-  getCoachWorkouts,
-  deleteWorkoutById,
-  uploadPaymentProof,
-  submitPayment,
-  getCoachPayments,
-  getClientPayments,
-  updatePaymentStatus,
-  getPackages,
-  createPackage,
-  deletePackage
-} from "./db";
 
-const COLORS = {
-  bg: "#0A0A0B",
-  surface: "#111113",
-  surface2: "#18181C",
-  surface3: "#1E1E24",
-  border: "#2A2A32",
-  borderHover: "#3A3A45",
-  accent: "#E8FF47",
-  accentDim: "#C8DF30",
-  accentBg: "rgba(232,255,71,0.08)",
-  accentBg2: "rgba(232,255,71,0.15)",
-  text: "#F5F5F7",
-  textMuted: "#8A8A9A",
-  textDim: "#5A5A6A",
-  success: "#22C55E",
-  successBg: "rgba(34,197,94,0.1)",
-  danger: "#EF4444",
-  dangerBg: "rgba(239,68,68,0.1)",
-  warning: "#F59E0B",
-  warningBg: "rgba(245,158,11,0.1)",
-  info: "#3B82F6",
-  infoBg: "rgba(59,130,246,0.1)",
-  purple: "#A78BFA",
-  purpleBg: "rgba(167,139,250,0.1)",
-};
+// Landing page
+import LandingPage from "./pages/LandingPage";
+
+// Constants
+import { COLORS } from "./constants/colors";
+
+// UI Components
+import Badge from "./components/ui/Badge";
+import Avatar from "./components/ui/Avatar";
+import Button from "./components/ui/Button";
+import { Input, Textarea } from "./components/ui/Input";
+import Modal from "./components/ui/Modal";
+import Stat from "./components/ui/Stat";
+
+// Layout Components
+import TopNav from "./components/layout/TopNav";
+import SidebarNav from "./components/layout/SidebarNav";
+
+// Services
+import { saveProfile } from "./services/profileService";
+import { getClients, updateClientStatus } from "./services/clientService";
+import { uploadWorkoutFile, saveWorkout, getCoachWorkouts, deleteWorkout } from "./services/workoutService";
+import { uploadPaymentProof, submitPayment, getCoachPayments, getClientPayments, updatePaymentStatus, getCoachIdFromSupabase } from "./services/paymentService";
+import { getPackages, createPackage, deletePackage } from "./services/packageService";
+import { logProgress, getProgress } from "./services/progressService";
+
 
 const coaches = [
   {
@@ -110,355 +94,7 @@ const mockProgress = [
   { client: "Mike Rodriguez", date: "Mar 29", weight: 178, chest: 41, waist: 34, hips: 38 },
 ];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// UTILITY COMPONENTS
-// ─────────────────────────────────────────────────────────────────────────────
 
-const Badge = ({ children, variant = "default" }) => {
-  const variants = {
-    default: { bg: COLORS.surface3, color: COLORS.textMuted },
-    active: { bg: COLORS.successBg, color: COLORS.success },
-    pending: { bg: COLORS.warningBg, color: COLORS.warning },
-    expired: { bg: COLORS.dangerBg, color: COLORS.danger },
-    approved: { bg: COLORS.successBg, color: COLORS.success },
-    popular: { bg: COLORS.accentBg2, color: COLORS.accent },
-    pdf: { bg: COLORS.infoBg, color: COLORS.info },
-    image: { bg: COLORS.purpleBg, color: COLORS.purple },
-  };
-  const style = variants[variant] || variants.default;
-  return (
-    <span style={{
-      background: style.bg, color: style.color,
-      padding: "3px 10px", borderRadius: 20, fontSize: 11,
-      fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase"
-    }}>{children}</span>
-  );
-};
-
-const Stat = ({ label, value, icon, color = COLORS.accent }) => (
-  <div style={{
-    background: COLORS.surface2, border: `1px solid ${COLORS.border}`,
-    borderRadius: 12, padding: "20px 24px", flex: 1, minWidth: 0
-  }}>
-    <div style={{ color: COLORS.textMuted, fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>{label}</div>
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <span style={{ fontSize: 32, fontWeight: 700, color: COLORS.text, letterSpacing: "-1px" }}>{value}</span>
-      {icon && <span style={{ fontSize: 20 }}>{icon}</span>}
-    </div>
-  </div>
-);
-
-const Avatar = ({ name, size = 40 }) => {
-  const initials = name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
-  const colors = ["#E8FF47","#A78BFA","#22C55E","#3B82F6","#F59E0B","#EF4444"];
-  const color = colors[name.charCodeAt(0) % colors.length];
-  return (
-    <div style={{
-      width: size, height: size, borderRadius: "50%",
-      background: `${color}20`, border: `2px solid ${color}40`,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontSize: size * 0.35, fontWeight: 700, color, flexShrink: 0
-    }}>{initials}</div>
-  );
-};
-
-const Input = ({ label, ...props }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-    {label && <label style={{ fontSize: 13, fontWeight: 600, color: COLORS.textMuted, letterSpacing: "0.04em" }}>{label}</label>}
-    <input {...props} style={{
-      background: COLORS.surface2, border: `1px solid ${COLORS.border}`,
-      borderRadius: 8, padding: "10px 14px", color: COLORS.text,
-      fontSize: 14, outline: "none", width: "100%", boxSizing: "border-box",
-      transition: "border-color 0.2s", ...props.style
-    }}
-      onFocus={e => e.target.style.borderColor = COLORS.accent}
-      onBlur={e => e.target.style.borderColor = COLORS.border}
-    />
-  </div>
-);
-
-const Textarea = ({ label, ...props }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-    {label && <label style={{ fontSize: 13, fontWeight: 600, color: COLORS.textMuted, letterSpacing: "0.04em" }}>{label}</label>}
-    <textarea {...props} style={{
-      background: COLORS.surface2, border: `1px solid ${COLORS.border}`,
-      borderRadius: 8, padding: "10px 14px", color: COLORS.text,
-      fontSize: 14, outline: "none", width: "100%", resize: "vertical",
-      minHeight: 100, boxSizing: "border-box", fontFamily: "inherit", ...props.style
-    }}
-      onFocus={e => e.target.style.borderColor = COLORS.accent}
-      onBlur={e => e.target.style.borderColor = COLORS.border}
-    />
-  </div>
-);
-
-const Button = ({ children, variant = "primary", size = "md", onClick, style: extraStyle = {} }) => {
-  const sizes = { sm: { padding: "7px 16px", fontSize: 13 }, md: { padding: "10px 22px", fontSize: 14 }, lg: { padding: "14px 32px", fontSize: 15 } };
-  const variants = {
-    primary: { background: COLORS.accent, color: "#0A0A0B", border: "none" },
-    secondary: { background: "transparent", color: COLORS.text, border: `1px solid ${COLORS.border}` },
-    danger: { background: COLORS.dangerBg, color: COLORS.danger, border: `1px solid ${COLORS.danger}40` },
-    ghost: { background: "transparent", color: COLORS.textMuted, border: "none" },
-    success: { background: COLORS.successBg, color: COLORS.success, border: `1px solid ${COLORS.success}40` },
-  };
-  return (
-    <button onClick={onClick} style={{
-      ...sizes[size], ...variants[variant], borderRadius: 8,
-      fontWeight: 700, cursor: "pointer", display: "inline-flex",
-      alignItems: "center", gap: 8, letterSpacing: "0.02em",
-      transition: "all 0.15s", whiteSpace: "nowrap", ...extraStyle
-    }}
-      onMouseEnter={e => { if (variant === "primary") e.target.style.background = COLORS.accentDim; }}
-      onMouseLeave={e => { if (variant === "primary") e.target.style.background = COLORS.accent; }}
-    >{children}</button>
-  );
-};
-
-const Modal = ({ isOpen, onClose, title, children }) => {
-  if (!isOpen) return null;
-  return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      zIndex: 1000, padding: 20
-    }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{
-        background: COLORS.surface, border: `1px solid ${COLORS.border}`,
-        borderRadius: 16, padding: 32, width: "100%", maxWidth: 520,
-        maxHeight: "90vh", overflowY: "auto"
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: COLORS.text }}>{title}</h3>
-          <button onClick={onClose} style={{
-            background: COLORS.surface2, border: `1px solid ${COLORS.border}`,
-            borderRadius: 6, width: 32, height: 32, cursor: "pointer",
-            color: COLORS.textMuted, fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center"
-          }}>×</button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// NAV
-// ─────────────────────────────────────────────────────────────────────────────
-
-const TopNav = ({ user, onNavigate, currentPage, onLogout }) => {
-  return (
-    <nav style={{
-      position: "sticky", top: 0, zIndex: 100,
-      background: `${COLORS.bg}ee`, backdropFilter: "blur(20px)",
-      borderBottom: `1px solid ${COLORS.border}`,
-      padding: "0 32px", height: 64,
-      display: "flex", alignItems: "center", justifyContent: "space-between"
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }} onClick={() => onNavigate("landing")}>
-        <div style={{
-          width: 32, height: 32, background: COLORS.accent, borderRadius: 8,
-          display: "flex", alignItems: "center", justifyContent: "center"
-        }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="#0A0A0B" strokeWidth="2" />
-          </svg>
-        </div>
-        <span style={{ fontWeight: 800, fontSize: 18, color: COLORS.text, letterSpacing: "-0.5px" }}>FitCoach<span style={{ color: COLORS.accent }}>Pro</span></span>
-      </div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        {!user ? (
-          <>
-            <Button variant="ghost" size="sm" onClick={() => onNavigate("login")}>Sign In</Button>
-            <Button variant="primary" size="sm" onClick={() => onNavigate("signup")}>Get Started</Button>
-          </>
-        ) : (
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{
-              background: COLORS.accentBg, border: `1px solid ${COLORS.accent}30`,
-              borderRadius: 20, padding: "4px 12px", fontSize: 12,
-              color: COLORS.accent, fontWeight: 600
-            }}>{user.role === "coach" ? "🏋️ Coach" : "💪 Client"}</div>
-            <button onClick={() => onNavigate("dashboard")} style={{
-  display: "flex", alignItems: "center", gap: 8,
-  background: COLORS.surface2, border: `1px solid ${COLORS.border}`,
-  borderRadius: 8, padding: "6px 14px", cursor: "pointer",
-  color: COLORS.text, fontSize: 13, fontWeight: 600
-}}>
-  <Avatar name={user.name} size={24} />
-  {user.name.split(" ")[0]}
-</button>
-
-<button onClick={onLogout} style={{
-  display: "flex", alignItems: "center", gap: 6,
-  background: COLORS.dangerBg, border: `1px solid ${COLORS.danger}30`,
-  borderRadius: 8, padding: "6px 14px", cursor: "pointer",
-  color: COLORS.danger, fontSize: 13, fontWeight: 600
-}}>
-  🚪 Logout
-</button>
-          </div>
-        )}
-      </div>
-    </nav>
-  );
-};
-
-const SidebarNav = ({ user, activeTab, setActiveTab }) => {
-  const coachItems = [
-    { id: "overview", label: "Overview", icon: "⬡" },
-    { id: "clients", label: "Clients", icon: "👥" },
-    { id: "workouts", label: "Workout Plans", icon: "🏋️" },
-    { id: "diets", label: "Diet Charts", icon: "🥗" },
-    { id: "payments", label: "Payments", icon: "💳" },
-    { id: "packages", label: "Packages", icon: "📦" },
-    { id: "profile", label: "Coach Profile", icon: "✦" },
-  ];
-  const clientItems = [
-    { id: "overview", label: "My Dashboard", icon: "⬡" },
-    { id: "workouts", label: "My Workouts", icon: "🏋️" },
-    { id: "diets", label: "My Diet Plan", icon: "🥗" },
-    { id: "progress", label: "My Progress", icon: "📈" },
-    { id: "subscription", label: "Subscription", icon: "💎" },
-    { id: "payment", label: "Make Payment", icon: "💳" },
-  ];
-  const items = user?.role === "coach" ? coachItems : clientItems;
-
-  return (
-    <aside style={{
-      width: 240, background: COLORS.surface,
-      borderRight: `1px solid ${COLORS.border}`,
-      padding: "24px 16px", display: "flex", flexDirection: "column",
-      gap: 4, flexShrink: 0, minHeight: "calc(100vh - 64px)"
-    }}>
-      <div style={{ padding: "0 8px 16px", borderBottom: `1px solid ${COLORS.border}`, marginBottom: 8 }}>
-        <div style={{ fontSize: 11, color: COLORS.textDim, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" }}>
-          {user?.role === "coach" ? "Coach Portal" : "Client Portal"}
-        </div>
-      </div>
-      {items.map(item => (
-        <button key={item.id} onClick={() => setActiveTab(item.id)} style={{
-          display: "flex", alignItems: "center", gap: 12,
-          padding: "10px 12px", borderRadius: 8, cursor: "pointer",
-          background: activeTab === item.id ? COLORS.accentBg2 : "transparent",
-          border: activeTab === item.id ? `1px solid ${COLORS.accent}30` : "1px solid transparent",
-          color: activeTab === item.id ? COLORS.accent : COLORS.textMuted,
-          fontWeight: activeTab === item.id ? 700 : 500,
-          fontSize: 14, textAlign: "left", transition: "all 0.15s"
-        }}>
-          <span style={{ fontSize: 16, width: 20, textAlign: "center" }}>{item.icon}</span>
-          {item.label}
-        </button>
-      ))}
-
-      <div style={{ marginTop: "auto", padding: "16px 0 0", borderTop: `1px solid ${COLORS.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 8px" }}>
-          <Avatar name={user?.name || "User"} size={32} />
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.text }}>{user?.name?.split(" ")[0]}</div>
-            <div style={{ fontSize: 11, color: COLORS.textDim }}>{user?.role}</div>
-          </div>
-        </div>
-      </div>
-    </aside>
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// LANDING PAGE
-// ─────────────────────────────────────────────────────────────────────────────
-
-const LandingPage = ({ onNavigate }) => {
-  return (
-    <div style={{ background: COLORS.bg, minHeight: "100vh" }}>
-      {/* Hero */}
-      <section style={{
-        padding: "120px 40px 100px", textAlign: "center",
-        maxWidth: 900, margin: "0 auto",
-        background: `radial-gradient(ellipse 60% 40% at 50% 0%, ${COLORS.accentBg} 0%, transparent 70%)`
-      }}>
-        <div style={{
-          display: "inline-flex", alignItems: "center", gap: 8,
-          background: COLORS.accentBg, border: `1px solid ${COLORS.accent}40`,
-          borderRadius: 20, padding: "6px 16px", marginBottom: 32,
-          fontSize: 13, color: COLORS.accent, fontWeight: 600
-        }}>
-          ⚡ The Professional Fitness Coaching Platform
-        </div>
-        <h1 style={{
-          fontSize: "clamp(42px, 7vw, 80px)", fontWeight: 900,
-          color: COLORS.text, margin: "0 0 24px",
-          letterSpacing: "-3px", lineHeight: 1.05
-        }}>
-          Stop coaching on<br />
-          <span style={{ color: COLORS.accent }}>WhatsApp.</span>
-        </h1>
-        <p style={{
-          fontSize: 20, color: COLORS.textMuted, maxWidth: 580,
-          margin: "0 auto 48px", lineHeight: 1.7
-        }}>
-          FitCoachPro gives elite fitness coaches a professional platform to manage clients, deliver programs, and scale their business — without the chaos.
-        </p>
-        <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
-          <Button variant="primary" size="lg" onClick={() => onNavigate("signup")}>Start Free Trial →</Button>
-          <Button variant="secondary" size="lg" onClick={() => onNavigate("public-coach")}>See a Coach Profile</Button>
-        </div>
-        <div style={{ display: "flex", gap: 32, justifyContent: "center", marginTop: 64, flexWrap: "wrap" }}>
-          {[["500+", "Active Coaches"], ["12,000+", "Clients Managed"], ["$4M+", "Payments Processed"]].map(([v, l]) => (
-            <div key={l} style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: 800, color: COLORS.text }}>{v}</div>
-              <div style={{ fontSize: 13, color: COLORS.textMuted }}>{l}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Features */}
-      <section style={{ padding: "80px 40px", maxWidth: 1100, margin: "0 auto" }}>
-        <h2 style={{ textAlign: "center", fontSize: 36, fontWeight: 800, color: COLORS.text, letterSpacing: "-1px", marginBottom: 60 }}>
-          Everything you need to run a<br /><span style={{ color: COLORS.accent }}>premium coaching business</span>
-        </h2>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 20 }}>
-          {[
-            { icon: "🎯", title: "Client Management", desc: "Approve registrations, track progress, manage active/inactive clients from one dashboard." },
-            { icon: "🏋️", title: "Program Delivery", desc: "Upload workout plans and diet charts as PDFs, images, or text. Assign to individual clients or all." },
-            { icon: "📈", title: "Progress Tracking", desc: "Clients upload photos and measurements. Visualize their transformation journey over time." },
-            { icon: "💳", title: "Payment System", desc: "Manual bank transfer with screenshot uploads. Approve/reject payment proofs instantly." },
-            { icon: "🌐", title: "Public Coach Page", desc: "Your own branded profile page at fitcoachpro.com/coach/yourname with packages and testimonials." },
-            { icon: "📦", title: "Package Builder", desc: "Create multiple coaching packages with custom pricing, features, and durations." },
-          ].map(f => (
-            <div key={f.title} style={{
-              background: COLORS.surface, border: `1px solid ${COLORS.border}`,
-              borderRadius: 16, padding: 28,
-              transition: "border-color 0.2s"
-            }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = COLORS.accent + "50"}
-              onMouseLeave={e => e.currentTarget.style.borderColor = COLORS.border}
-            >
-              <div style={{ fontSize: 36, marginBottom: 16 }}>{f.icon}</div>
-              <h3 style={{ fontSize: 18, fontWeight: 700, color: COLORS.text, margin: "0 0 10px" }}>{f.title}</h3>
-              <p style={{ fontSize: 14, color: COLORS.textMuted, margin: 0, lineHeight: 1.6 }}>{f.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section style={{
-        margin: "0 40px 80px",
-        background: `linear-gradient(135deg, ${COLORS.surface2} 0%, ${COLORS.surface3} 100%)`,
-        border: `1px solid ${COLORS.border}`, borderRadius: 24,
-        padding: "64px 40px", textAlign: "center", maxWidth: 1020, marginLeft: "auto", marginRight: "auto"
-      }}>
-        <h2 style={{ fontSize: 36, fontWeight: 800, color: COLORS.text, letterSpacing: "-1px", marginBottom: 16 }}>
-          Ready to go professional?
-        </h2>
-        <p style={{ color: COLORS.textMuted, fontSize: 17, marginBottom: 32 }}>Join 500+ coaches who've upgraded from messy WhatsApp groups.</p>
-        <Button variant="primary" size="lg" onClick={() => onNavigate("signup")}>Create Your Account — Free</Button>
-      </section>
-    </div>
-  );
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTH PAGES
@@ -466,18 +102,29 @@ const LandingPage = ({ onNavigate }) => {
 
 
 const AuthPage = ({ mode, onNavigate, onLogin }) => {
-  const [role, setRole] = useState("coach");
+  const [role, setRole] = useState("client");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Get coach info from sessionStorage (set when client clicks Get Started)
+  const preselectedCoachId = sessionStorage.getItem("selectedCoachId");
+  const preselectedCoachName = sessionStorage.getItem("selectedCoachName");
+  const preselectedPackage = sessionStorage.getItem("selectedPackage");
+
+  // If came from coach page, force client role
+  useEffect(() => {
+    if (preselectedCoachId) {
+      setRole("client");
+    }
+  }, []);
+
   const handleSubmit = async () => {
     setError("");
     setLoading(true);
 
-    // Basic validation
     if (!email || !password) {
       setError("Please fill in all fields.");
       setLoading(false);
@@ -494,20 +141,34 @@ const AuthPage = ({ mode, onNavigate, onLogin }) => {
       return;
     }
 
-   try {
+    try {
       let userCredential;
 
       if (mode === "signup") {
         userCredential = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(userCredential.user, { displayName: name });
-        // ← NEW: save to Supabase
-        await saveProfile(userCredential.user.uid, name, email, role);
+
+        // Save profile with coach link if client came from coach page
+        await saveProfile(
+          userCredential.user.uid,
+          name,
+          email,
+          role,
+          role === "client" ? preselectedCoachId : null,
+          preselectedPackage || null
+        );
+
+        // Clear sessionStorage after use
+        sessionStorage.removeItem("selectedCoachId");
+        sessionStorage.removeItem("selectedCoachName");
+        sessionStorage.removeItem("selectedPackage");
+        sessionStorage.removeItem("selectedPackagePrice");
+
       } else {
         userCredential = await signInWithEmailAndPassword(auth, email, password);
       }
 
       const firebaseUser = userCredential.user;
-
       const user = {
         name: firebaseUser.displayName || email.split("@")[0],
         email: firebaseUser.email,
@@ -551,30 +212,38 @@ const AuthPage = ({ mode, onNavigate, onLogin }) => {
           <h2 style={{ fontSize: 24, fontWeight: 800, color: COLORS.text, margin: "0 0 8px" }}>
             {mode === "login" ? "Welcome back" : "Create account"}
           </h2>
-          <p style={{ color: COLORS.textMuted, fontSize: 14, margin: 0 }}>
-            {mode === "login" ? "Sign in to your dashboard" : "Start your fitness coaching journey"}
-          </p>
-        </div>
-
-        {/* Role Toggle */}
-        <div style={{
-          display: "flex", background: COLORS.surface2,
-          borderRadius: 10, padding: 4, marginBottom: 24, gap: 4
-        }}>
-          {["coach", "client"].map(r => (
-            <button key={r} onClick={() => setRole(r)} style={{
-              flex: 1, padding: "8px 0", borderRadius: 7, fontSize: 14, fontWeight: 600,
-              background: role === r ? COLORS.accentBg2 : "transparent",
-              color: role === r ? COLORS.accent : COLORS.textMuted,
-              border: role === r ? `1px solid ${COLORS.accent}30` : "1px solid transparent",
-              cursor: "pointer", textTransform: "capitalize"
+          {preselectedCoachName && mode === "signup" && (
+            <div style={{
+              background: COLORS.accentBg, border: `1px solid ${COLORS.accent}30`,
+              borderRadius: 8, padding: "8px 16px", marginTop: 12,
+              fontSize: 13, color: COLORS.accent, fontWeight: 600
             }}>
-              {r === "coach" ? "🏋️ Coach" : "💪 Client"}
-            </button>
-          ))}
+              🏋️ Joining {preselectedCoachName}'s program
+              {preselectedPackage && ` · ${preselectedPackage}`}
+            </div>
+          )}
         </div>
 
-        {/* Error Message */}
+        {/* Role Toggle — only show if NOT coming from coach page */}
+        {!preselectedCoachId && (
+          <div style={{
+            display: "flex", background: COLORS.surface2,
+            borderRadius: 10, padding: 4, marginBottom: 24, gap: 4
+          }}>
+            {["coach", "client"].map(r => (
+              <button key={r} onClick={() => setRole(r)} style={{
+                flex: 1, padding: "8px 0", borderRadius: 7, fontSize: 14, fontWeight: 600,
+                background: role === r ? COLORS.accentBg2 : "transparent",
+                color: role === r ? COLORS.accent : COLORS.textMuted,
+                border: role === r ? `1px solid ${COLORS.accent}30` : "1px solid transparent",
+                cursor: "pointer", textTransform: "capitalize"
+              }}>
+                {r === "coach" ? "🏋️ Coach" : "💪 Client"}
+              </button>
+            ))}
+          </div>
+        )}
+
         {error && (
           <div style={{
             background: COLORS.dangerBg, border: `1px solid ${COLORS.danger}40`,
@@ -602,10 +271,10 @@ const AuthPage = ({ mode, onNavigate, onLogin }) => {
               background: loading ? COLORS.surface3 : COLORS.accent,
               color: loading ? COLORS.textMuted : "#0A0A0B",
               border: "none", borderRadius: 8, padding: "12px 22px",
-              fontSize: 15, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer",
+              fontSize: 15, fontWeight: 700,
+              cursor: loading ? "not-allowed" : "pointer",
               width: "100%", marginTop: 4
-            }}
-          >
+            }}>
             {loading ? "Please wait..." : (mode === "login" ? "Sign In →" : "Create Account →")}
           </button>
         </div>
@@ -626,17 +295,92 @@ const AuthPage = ({ mode, onNavigate, onLogin }) => {
 // PUBLIC COACH PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PublicCoachPage = ({ onNavigate }) => {
-  const coach = coaches[0];
+const PublicCoachPage = ({ onNavigate, coachHandle }) => {
+  const [coach, setCoach] = useState(null);
+  const [packages, setPackages] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selectedPkg, setSelectedPkg] = useState(null);
+
+  useEffect(() => {
+    loadCoachData();
+  }, [coachHandle]);
+
+  const loadCoachData = async () => {
+    const { supabase } = await import("./supabase");
+
+    // Load coach profile
+    const { data: coachData } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("role", "coach")
+      .single();
+
+    if (coachData) {
+      setCoach(coachData);
+
+      // Load their packages
+      const { data: pkgData } = await supabase
+        .from("packages")
+        .select("*")
+        .eq("coach_id", coachData.id)
+        .order("price", { ascending: true });
+
+      setPackages(pkgData || []);
+    }
+    setLoading(false);
+  };
+
+  const handleGetStarted = (pkg) => {
+    // Store coach and package info so signup can use it
+    sessionStorage.setItem("selectedCoachId", coach?.id);
+    sessionStorage.setItem("selectedCoachName", coach?.name);
+    sessionStorage.setItem("selectedPackage", pkg.name);
+    sessionStorage.setItem("selectedPackagePrice", pkg.price);
+    onNavigate("signup");
+  };
+
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: "100vh", background: COLORS.bg,
+        display: "flex", alignItems: "center", justifyContent: "center"
+      }}>
+        <div style={{ color: COLORS.textMuted }}>Loading coach profile...</div>
+      </div>
+    );
+  }
+
+  if (!coach) {
+    return (
+      <div style={{
+        minHeight: "100vh", background: COLORS.bg,
+        display: "flex", alignItems: "center", justifyContent: "center"
+      }}>
+        <div style={{ color: COLORS.danger }}>Coach not found.</div>
+      </div>
+    );
+  }
+
+  // Use static testimonials and transformations for now
+  const testimonials = [
+    { name: "Mike Rodriguez", text: "Completely transformed my approach to fitness. Down 25 lbs in 12 weeks!", stars: 5 },
+    { name: "Sarah Kim", text: "Best investment I've ever made. The personalized plan was exactly what I needed.", stars: 5 },
+    { name: "Alex Martinez", text: "Gained 20 lbs of muscle in 5 months. The programming is next level.", stars: 5 },
+  ];
+
+  const transformations = [
+    { before: "180 lbs", after: "155 lbs", duration: "12 weeks", name: "Mike R." },
+    { before: "210 lbs", after: "175 lbs", duration: "16 weeks", name: "Sarah K." },
+    { before: "165 lbs", after: "185 lbs", duration: "20 weeks", name: "Alex M." },
+  ];
 
   return (
     <div style={{ background: COLORS.bg, minHeight: "100vh", paddingBottom: 80 }}>
-      {/* Hero Section */}
+      {/* Hero */}
       <div style={{
         background: `linear-gradient(180deg, ${COLORS.accentBg} 0%, transparent 100%)`,
-        borderBottom: `1px solid ${COLORS.border}`, padding: "60px 40px 48px",
-        textAlign: "center"
+        borderBottom: `1px solid ${COLORS.border}`,
+        padding: "60px 40px 48px", textAlign: "center"
       }}>
         <div style={{
           width: 100, height: 100, borderRadius: "50%",
@@ -644,20 +388,21 @@ const PublicCoachPage = ({ onNavigate }) => {
           margin: "0 auto 20px", display: "flex", alignItems: "center",
           justifyContent: "center", fontSize: 44
         }}>💪</div>
+
         <h1 style={{ fontSize: 36, fontWeight: 900, color: COLORS.text, margin: "0 0 12px", letterSpacing: "-1px" }}>
           {coach.name}
         </h1>
+
         <div style={{ color: COLORS.accent, fontSize: 14, fontWeight: 600, marginBottom: 16 }}>
-          fitcoachpro.com/coach/{coach.handle}
+          Certified Fitness Coach
         </div>
-        <p style={{ color: COLORS.textMuted, maxWidth: 560, margin: "0 auto 20px", fontSize: 16, lineHeight: 1.7 }}>
-          {coach.bio}
+
+        <p style={{ color: COLORS.textMuted, maxWidth: 560, margin: "0 auto 24px", fontSize: 16, lineHeight: 1.7 }}>
+          {coach.bio || "Elite fitness coach helping clients transform their bodies and mindset through personalized training and nutrition plans."}
         </p>
-        <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-          {coach.specialties.map(s => <Badge key={s}>{s}</Badge>)}
-        </div>
-        <div style={{ display: "flex", gap: 32, justifyContent: "center", marginTop: 32 }}>
-          {[["⭐ " + coach.rating, "Rating"], [coach.reviews, "Reviews"], [coach.clients + "+", "Clients"]].map(([v, l]) => (
+
+        <div style={{ display: "flex", gap: 32, justifyContent: "center", flexWrap: "wrap" }}>
+          {[["⭐ 4.9", "Rating"], ["127+", "Reviews"], ["340+", "Clients"]].map(([v, l]) => (
             <div key={l} style={{ textAlign: "center" }}>
               <div style={{ fontSize: 22, fontWeight: 800, color: COLORS.text }}>{v}</div>
               <div style={{ fontSize: 12, color: COLORS.textMuted }}>{l}</div>
@@ -667,31 +412,27 @@ const PublicCoachPage = ({ onNavigate }) => {
       </div>
 
       <div style={{ maxWidth: 1000, margin: "0 auto", padding: "0 24px" }}>
+
         {/* Transformations */}
         <section style={{ marginTop: 56 }}>
           <h2 style={{ fontSize: 24, fontWeight: 800, color: COLORS.text, letterSpacing: "-0.5px", marginBottom: 24 }}>
             Client Transformations
           </h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
-            {coach.transformations.map((t, i) => (
-              <div key={i} style={{
-                background: COLORS.surface, border: `1px solid ${COLORS.border}`,
-                borderRadius: 14, padding: 24
-              }}>
+            {transformations.map((t, i) => (
+              <div key={i} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 24 }}>
                 <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
                   <div style={{ flex: 1, background: COLORS.surface2, borderRadius: 8, padding: "12px 0", textAlign: "center" }}>
-                    <div style={{ fontSize: 10, color: COLORS.textDim, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" }}>Before</div>
+                    <div style={{ fontSize: 10, color: COLORS.textDim, fontWeight: 700, textTransform: "uppercase" }}>Before</div>
                     <div style={{ fontSize: 20, fontWeight: 800, color: COLORS.danger, marginTop: 4 }}>{t.before}</div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", color: COLORS.accent, fontSize: 18 }}>→</div>
                   <div style={{ flex: 1, background: COLORS.surface2, borderRadius: 8, padding: "12px 0", textAlign: "center" }}>
-                    <div style={{ fontSize: 10, color: COLORS.textDim, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" }}>After</div>
+                    <div style={{ fontSize: 10, color: COLORS.textDim, fontWeight: 700, textTransform: "uppercase" }}>After</div>
                     <div style={{ fontSize: 20, fontWeight: 800, color: COLORS.success, marginTop: 4 }}>{t.after}</div>
                   </div>
                 </div>
-                <div style={{ fontSize: 13, color: COLORS.textMuted }}>
-                  {t.name} · {t.duration}
-                </div>
+                <div style={{ fontSize: 13, color: COLORS.textMuted }}>{t.name} · {t.duration}</div>
               </div>
             ))}
           </div>
@@ -702,40 +443,57 @@ const PublicCoachPage = ({ onNavigate }) => {
           <h2 style={{ fontSize: 24, fontWeight: 800, color: COLORS.text, letterSpacing: "-0.5px", marginBottom: 24 }}>
             Coaching Packages
           </h2>
+
+          {packages.length === 0 && (
+            <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 48, textAlign: "center" }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>📦</div>
+              <div style={{ color: COLORS.textMuted }}>No packages available yet.</div>
+            </div>
+          )}
+
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 20 }}>
-            {coach.packages.map(pkg => (
+            {packages.map((pkg, index) => (
               <div key={pkg.id} style={{
                 background: COLORS.surface,
-                border: `2px solid ${pkg.popular ? COLORS.accent : COLORS.border}`,
+                border: `2px solid ${pkg.is_popular ? COLORS.accent : COLORS.border}`,
                 borderRadius: 16, padding: 28, position: "relative"
               }}>
-                {pkg.popular && (
+                {pkg.is_popular && (
                   <div style={{
                     position: "absolute", top: -13, left: "50%", transform: "translateX(-50%)",
                     background: COLORS.accent, color: "#0A0A0B", fontSize: 11,
-                    fontWeight: 800, padding: "4px 16px", borderRadius: 20, letterSpacing: "0.08em", textTransform: "uppercase"
+                    fontWeight: 800, padding: "4px 16px", borderRadius: 20,
+                    letterSpacing: "0.08em", textTransform: "uppercase"
                   }}>Most Popular</div>
                 )}
                 <div style={{ fontSize: 18, fontWeight: 800, color: COLORS.text, marginBottom: 4 }}>{pkg.name}</div>
                 <div style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 20 }}>{pkg.duration}</div>
                 <div style={{ marginBottom: 24 }}>
-                  <span style={{ fontSize: 42, fontWeight: 900, color: pkg.popular ? COLORS.accent : COLORS.text, letterSpacing: "-2px" }}>${pkg.price}</span>
+                  <span style={{ fontSize: 42, fontWeight: 900, color: pkg.is_popular ? COLORS.accent : COLORS.text, letterSpacing: "-2px" }}>
+                    ${pkg.price}
+                  </span>
                 </div>
-                <ul style={{ listStyle: "none", padding: 0, margin: "0 0 24px", display: "flex", flexDirection: "column", gap: 10 }}>
-                  {pkg.features.map(f => (
-                    <li key={f} style={{ display: "flex", gap: 10, fontSize: 14, color: COLORS.textMuted, alignItems: "flex-start" }}>
-                      <span style={{ color: COLORS.success, fontSize: 16, lineHeight: 1.3 }}>✓</span>
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  variant={pkg.popular ? "primary" : "secondary"}
-                  style={{ width: "100%", justifyContent: "center" }}
-                  onClick={() => { setSelectedPkg(pkg); onNavigate("signup"); }}
-                >
-                  Get Started
-                </Button>
+                {pkg.features && pkg.features.length > 0 && (
+                  <ul style={{ listStyle: "none", padding: 0, margin: "0 0 24px", display: "flex", flexDirection: "column", gap: 10 }}>
+                    {pkg.features.map((f, i) => (
+                      <li key={i} style={{ display: "flex", gap: 10, fontSize: 14, color: COLORS.textMuted, alignItems: "flex-start" }}>
+                        <span style={{ color: COLORS.success, fontSize: 16, lineHeight: 1.3 }}>✓</span>
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <button
+                  onClick={() => handleGetStarted(pkg)}
+                  style={{
+                    width: "100%", padding: "12px 0",
+                    background: pkg.is_popular ? COLORS.accent : "transparent",
+                    color: pkg.is_popular ? "#0A0A0B" : COLORS.text,
+                    border: pkg.is_popular ? "none" : `1px solid ${COLORS.border}`,
+                    borderRadius: 8, fontSize: 15, fontWeight: 700, cursor: "pointer"
+                  }}>
+                  Get Started →
+                </button>
               </div>
             ))}
           </div>
@@ -747,11 +505,8 @@ const PublicCoachPage = ({ onNavigate }) => {
             What clients say
           </h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
-            {coach.testimonials.map((t, i) => (
-              <div key={i} style={{
-                background: COLORS.surface, border: `1px solid ${COLORS.border}`,
-                borderRadius: 14, padding: 24
-              }}>
+            {testimonials.map((t, i) => (
+              <div key={i} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 14, padding: 24 }}>
                 <div style={{ color: COLORS.warning, marginBottom: 12, fontSize: 16 }}>{"★".repeat(t.stars)}</div>
                 <p style={{ fontSize: 14, color: COLORS.textMuted, lineHeight: 1.7, margin: "0 0 16px" }}>"{t.text}"</p>
                 <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.text }}>— {t.name}</div>
@@ -759,10 +514,36 @@ const PublicCoachPage = ({ onNavigate }) => {
             ))}
           </div>
         </section>
+
+        {/* Bottom CTA */}
+        <section style={{
+          marginTop: 56,
+          background: `linear-gradient(135deg, ${COLORS.surface2} 0%, ${COLORS.surface3} 100%)`,
+          border: `1px solid ${COLORS.accent}30`, borderRadius: 20,
+          padding: "48px 40px", textAlign: "center"
+        }}>
+          <h2 style={{ fontSize: 28, fontWeight: 800, color: COLORS.text, marginBottom: 12 }}>
+            Ready to transform your body?
+          </h2>
+          <p style={{ color: COLORS.textMuted, marginBottom: 28, fontSize: 16 }}>
+            Join {coach.name}'s coaching program today
+          </p>
+          <button
+            onClick={() => packages[0] && handleGetStarted(packages[0])}
+            style={{
+              background: COLORS.accent, color: "#0A0A0B",
+              border: "none", borderRadius: 10, padding: "14px 40px",
+              fontSize: 16, fontWeight: 800, cursor: "pointer"
+            }}>
+            Start Your Transformation →
+          </button>
+        </section>
       </div>
     </div>
   );
 };
+
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COACH DASHBOARD TABS
@@ -1053,7 +834,7 @@ const CoachWorkouts = ({ user }) => {
 
   const handleDelete = async (id) => {
     if (window.confirm("Delete this workout plan?")) {
-      await deleteWorkoutById(id);
+      await deleteWorkout(id);
       await loadWorkouts();
     }
   };
@@ -1392,8 +1173,8 @@ const CoachPayments = ({ user }) => {
     </div>
   );
 };
-
 const ClientPayment = ({ user }) => {
+  const [coachId, setCoachId] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [selectedPkg, setSelectedPkg] = useState("Transformation");
   const [amount, setAmount] = useState("");
@@ -1406,27 +1187,67 @@ const ClientPayment = ({ user }) => {
   const fileInputRef = useRef(null);
   const coach = coaches[0];
 
-  useEffect(() => { loadMyPayments(); }, []);
+  useEffect(() => {
+    loadCoachId();
+    loadMyPayments();
+  }, []);
+
+const loadCoachId = async () => {
+  const { supabase } = await import("./supabase");
+
+  // Get THIS client's assigned coach from their profile
+  const { data } = await supabase
+    .from("profiles")
+    .select("coach_id, selected_package")
+    .eq("id", user?.uid)
+    .single();
+
+  if (data?.coach_id) {
+    console.log("✅ My assigned coach:", data.coach_id);
+    setCoachId(data.coach_id);
+    // Auto-select their package if available
+    if (data.selected_package) {
+      setSelectedPkg(data.selected_package);
+    }
+  } else {
+    console.warn("⚠️ No coach assigned to this client");
+  }
+};
 
   const loadMyPayments = async () => {
-    const data = await getClientPayments(user?.uid);
+    if (!user?.uid) return;
+    const data = await getClientPayments(user.uid);
     setPayments(data);
   };
 
-  const handleSubmit = async () => {
-    if (!amount) { alert("Please enter the amount you transferred"); return; }
-    if (!selectedFile) { alert("Please upload your payment screenshot"); return; }
+const handleSubmit = async () => {
+  if (!amount) {
+    alert("Please enter the amount you transferred");
+    return;
+  }
+  if (!selectedFile) {
+    alert("Please upload your payment screenshot");
+    return;
+  }
+  if (!coachId) {
+    alert("Could not find coach. Please try again.");
+    return;
+  }
 
-    setUploading(true);
+  setUploading(true);
+  console.log("Submitting payment:", { clientId: user?.uid, coachId, amount });
+
+  try {
     const proofUrl = await uploadPaymentProof(user?.uid, selectedFile);
 
     if (proofUrl) {
-      await submitPayment(user?.uid, "coach_id_here", {
+      await submitPayment(user?.uid, coachId, {
         package_name: selectedPkg,
         amount: Number(amount),
         proof_url: proofUrl,
         status: "pending"
       });
+
       await loadMyPayments();
       setShowModal(false);
       setSelectedFile(null);
@@ -1434,11 +1255,17 @@ const ClientPayment = ({ user }) => {
       setReference("");
       setSuccess(true);
       setTimeout(() => setSuccess(false), 4000);
+      console.log("✅ Payment submitted successfully!");
     } else {
       alert("Upload failed. Please try again.");
     }
-    setUploading(false);
-  };
+  } catch (err) {
+    console.error("❌ Payment submission error:", err.message);
+    alert("Payment failed: " + err.message);
+  }
+
+  setUploading(false);
+};
 
   return (
     <div>
@@ -2103,50 +1930,64 @@ const Dashboard = ({ user }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  const { user, setUser, logout, loading } = useAuth();
   const [page, setPage] = useState("landing");
-  const [user, setUser] = useState(null);
 
-const navigate = (p) => setPage(p);
-const login = (u) => setUser(u);
-const logout = async () => {
-  try {
-    await signOut(auth);
-  } catch (err) {
-    console.error("Logout error:", err);
+  const navigate = (p) => setPage(p);
+
+  // When user logs in redirect to dashboard
+  useEffect(() => {
+    if (user && page === "landing") {
+      setPage("dashboard");
+    }
+  }, [user]);
+
+  // Show loading screen while checking auth
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: "100vh", background: "#0A0A0B",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        flexDirection: "column", gap: 16
+      }}>
+        <div style={{
+          width: 40, height: 40, background: "#E8FF47", borderRadius: 10,
+          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22
+        }}>⚡</div>
+        <div style={{ color: "#8A8A9A", fontSize: 14 }}>Loading...</div>
+      </div>
+    );
   }
-  setUser(null);
-  setPage("landing");
-};
 
   return (
-    <div style={{ fontFamily: "'DM Sans', 'Helvetica Neue', sans-serif", background: COLORS.bg, minHeight: "100vh" }}>
+    <div style={{ fontFamily: "'DM Sans', 'Helvetica Neue', sans-serif", background: "#0A0A0B", minHeight: "100vh" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;0,9..40,800;0,9..40,900;1,9..40,400&display=swap');
         * { box-sizing: border-box; }
-        body { margin: 0; background: ${COLORS.bg}; }
+        body { margin: 0; background: #0A0A0B; }
         input, select, textarea, button { font-family: inherit; }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: ${COLORS.surface}; }
-        ::-webkit-scrollbar-thumb { background: ${COLORS.border}; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: ${COLORS.borderHover}; }
+        ::-webkit-scrollbar-track { background: #111113; }
+        ::-webkit-scrollbar-thumb { background: #2A2A32; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3A3A45; }
       `}</style>
 
       {page !== "dashboard" && (
-        <TopNav user={user} onNavigate={navigate} currentPage={page}onLogout={logout} />
+        <TopNav user={user} onNavigate={navigate} currentPage={page} onLogout={logout} />
       )}
 
       {page === "landing" && <LandingPage onNavigate={navigate} />}
-      {page === "login" && <AuthPage mode="login" onNavigate={navigate} onLogin={login} />}
-      {page === "signup" && <AuthPage mode="signup" onNavigate={navigate} onLogin={login} />}
+      {page === "login" && <AuthPage mode="login" onNavigate={navigate} onLogin={setUser} />}
+      {page === "signup" && <AuthPage mode="signup" onNavigate={navigate} onLogin={setUser} />}
       {page === "public-coach" && <PublicCoachPage onNavigate={navigate} />}
       {page === "dashboard" && user && (
         <div>
-          <TopNav user={user} onNavigate={navigate} currentPage={page}onLogout={logout} />
+          <TopNav user={user} onNavigate={navigate} currentPage={page} onLogout={logout} />
           <Dashboard user={user} />
         </div>
       )}
       {page === "dashboard" && !user && (
-        <AuthPage mode="login" onNavigate={navigate} onLogin={login} />
+        <AuthPage mode="login" onNavigate={navigate} onLogin={setUser} />
       )}
     </div>
   );
